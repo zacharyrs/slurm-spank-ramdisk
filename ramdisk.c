@@ -37,16 +37,13 @@ int parse_ramdisk_size(int val, const char *optarg, int remote) {
     return ESPANK_SUCCESS;
 }
 
-struct spank_option spank_options[] = {
-    {
-        "ramdisk",
-        "N[MG]",
-        "Create a RAM disk of N (MB, GB), allocating as a portion of the memory requested.",
-        1,
-        0,
-        (spank_opt_cb_f) parse_ramdisk_size
-    },
-    SPANK_OPTIONS_TABLE_END
+struct spank_option ramdisk = {
+    "ramdisk",
+    "N[MG]",
+    "Create a RAM disk of N (MB, GB), allocating as a portion of the memory requested.",
+    1,
+    0,
+    (spank_opt_cb_f) parse_ramdisk_size
 };
 
 int get_directory(uint32_t job_id, uint32_t job_stepid, char** directory) {
@@ -68,6 +65,16 @@ int get_directory(uint32_t job_id, uint32_t job_stepid, char** directory) {
         asprintf(directory, "/ramdisks/%u.%u.ramdisk", job_id, job_stepid);
     }
     return 0;
+}
+
+int slurm_spank_init (spank_t sp, int ac, char **av) {
+    spank_context_t context = spank_context();
+
+    if (context == S_CTX_REMOTE || context == S_CTX_ALLOCATOR || context == S_CTX_LOCAL) {
+        return spank_option_register(sp, &ramdisk);
+    }
+
+    return ESPANK_SUCCESS;
 }
 
 int slurm_spank_init_post_opt (spank_t sp, int ac, char **av) {
