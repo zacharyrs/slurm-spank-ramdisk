@@ -79,6 +79,12 @@ int slurm_spank_init_post_opt(spank_t sp, int ac, char **av) {
     return ESPANK_SUCCESS;
   }
 
+  if (ramdisk_size == 0) {
+    // we've been called without the `--ramdisk` argument
+    slurm_verbose("ramdisk.c: called without the ramdisk argument");
+    return ESPANK_SUCCESS;
+  }
+
   // check memory allocation exceeds ramdisk size
   // the ramdisk debits from the memory allocation, hence if greater or equal
   // there will be no memory for the job itself
@@ -161,6 +167,13 @@ int slurm_spank_init_post_opt(spank_t sp, int ac, char **av) {
 // TODO: doxygen, mention hook for SPANK
 int slurm_spank_exit(spank_t sp, int ac, char **av) {
   if (spank_context() != S_CTX_REMOTE) {
+    // ensure we only perform mounts on the remote - i.e., on the compute node
+    return ESPANK_SUCCESS;
+  }
+
+  if (ramdisk_size == 0) {
+    // we've been called without the `--ramdisk` argument
+    slurm_verbose("ramdisk.c: called without the ramdisk argument");
     return ESPANK_SUCCESS;
   }
 
@@ -217,6 +230,11 @@ static int parse_ramdisk_size(int val, const char *optarg, int remote) {
       return ESPANK_ERROR;
     }
   } else {
+    return ESPANK_ERROR;
+  }
+
+  if (ramdisk_size == 0) {
+    slurm_error("ramdisk.c: cannot have a ramdisk of 0M");
     return ESPANK_ERROR;
   }
 
