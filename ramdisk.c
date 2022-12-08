@@ -24,7 +24,17 @@
 #define UNIT_MEGABYTES 'M'
 #define UNIT_GIGABYTES 'G'
 
-// plugin definition for SPANK
+#define SPANK_PLUGIN_NAME "ramdisk"
+#define SPANK_OPTION_NAME "ramdisk"
+
+// in plugstack.h, but not spank.h
+#define SPANK_OPTION_ENV_PREFIX "_SLURM_SPANK_OPTION_"
+
+// this one is hardcoded in the SLURM source...
+#define SPANK_PROPAGATION_PREFIX "SLURM_SPANK_"
+
+// plugin definition for SPANK - we can't use the `SPANK_PLUGIN_NAME` definition
+// as `SPANK_PLUGIN` is also a macro
 SPANK_PLUGIN("ramdisk", 1);
 
 static uint64_t ramdisk_size;
@@ -34,6 +44,13 @@ static int get_directory(spank_t sp, char directory[]);
 
 // TODO: doxygen, mention hook for SPANK
 int slurm_spank_init(spank_t sp, int ac, char **av) {
+  // drop ramdisk size environment variable - don't want to pass it to `srun`
+  spank_unsetenv(sp, SPANK_PROPAGATION_PREFIX SPANK_OPTION_ENV_PREFIX
+                 "_" SPANK_PLUGIN_NAME "__" SPANK_OPTION_NAME);
+
+  // drop the ramdisk path environment variable - it'll be set if we have one
+  spank_unsetenv(sp, "SLURM_JOB_RAMDISK");
+
   spank_context_t context = spank_context();
 
   if (context == S_CTX_ALLOCATOR || context == S_CTX_REMOTE ||
@@ -41,7 +58,7 @@ int slurm_spank_init(spank_t sp, int ac, char **av) {
     // register the `--ramdisk` option for allocator (sbatch), remote (compute
     // node steps), and local (srun, prior to offloading to remote)
     struct spank_option ramdisk_option = {
-        .name = "ramdisk",
+        .name = SPANK_OPTION_NAME,
         .arginfo = "N[MG]",
         .usage = "Create a RAM disk of N (MB, GB), allocating as "
                  "a portion of the memory requested.",
@@ -187,7 +204,7 @@ static int parse_ramdisk_size(int val, const char *optarg, int remote) {
   int n_args = sscanf(optarg, "%" PRIu64 "%c", &ramdisk_size, &ramdisk_unit);
 
   if (n_args == 1) {
-    slurm_verbose("ramdisk.c: size undefined, defaulting to megabytes");
+    slurm_verbose("ramdisk.c: unit undefined, defaulting to megabytes");
   } else if (n_args == 2) {
     if (ramdisk_unit == UNIT_GIGABYTES) {
       ramdisk_size *= 1024;
