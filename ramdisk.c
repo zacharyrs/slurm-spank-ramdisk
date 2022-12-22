@@ -1,10 +1,11 @@
-/*
- * ramdisk.c : Adds `--ramdisk` functionality to SLURM
+/**
+ * @file ramdisk.c
+ * @author Zachary Riedlshah (git@zacharyrs.me)
+ * @brief Adds a `--ramdisk` option to SLURM for temporary filesystem creation.
+ * @version 0.1
+ * @date 2022-12-22
  *
- * gcc -shared -fPIC -o ramdisk.so ramdisk.c
- *
- * plugstack.conf:
- * required /usr/local/lib/slurm/spank/ramdisk.so
+ * @copyright Copyright (c) 2022
  */
 #include <inttypes.h>
 #include <slurm/slurm.h>
@@ -42,13 +43,28 @@ static uint64_t ramdisk_size;
 static int parse_ramdisk_size(int val, const char *optarg, int remote);
 static int get_directory(spank_t sp, char directory[]);
 
-// TODO: doxygen, mention hook for SPANK
+/**
+ * @brief SPANK init hook to register the `--ramdisk` option
+ * Called as the plugin loads, prior to option parsing options.
+ * Clears any environment variables related to the ramdisk (path and size)
+ *
+ * Registers the `--ramdisk` option within allocator, remote, and local
+ * contexts. That is, registers it for `sbatch`, and `srun` primarily.
+ * Returns the register function success or failure.
+ *
+ * @param sp the spank instance
+ * @param ac argument count passed in `plugstack.conf` (0 for this plugin)
+ * @param av argument values passed in `plugstack.conf` (none)
+ * @return int
+ */
 int slurm_spank_init(spank_t sp, int ac, char **av) {
   // drop ramdisk size environment variable - don't want to pass it to `srun`
+  // and allocate another RAM disk for child steps
   spank_unsetenv(sp, SPANK_PROPAGATION_PREFIX SPANK_OPTION_ENV_PREFIX
                  "_" SPANK_PLUGIN_NAME "__" SPANK_OPTION_NAME);
 
-  // drop the ramdisk path environment variable - it'll be set if we have one
+  // drop the ramdisk path environment variable - it'll be set if we create one
+  // in the step.
   spank_unsetenv(sp, "SLURM_JOB_RAMDISK");
 
   spank_context_t context = spank_context();
@@ -72,7 +88,19 @@ int slurm_spank_init(spank_t sp, int ac, char **av) {
   return ESPANK_SUCCESS;
 }
 
-// TODO: doxygen, mention hook for SPANK
+/**
+ * @brief SPANK post init hook which creates and mounts the RAM disk
+ * Creates a RAM disk within the remote context (slurmstepd), when requested.
+ * RAM disk path is stored in the job environment variable `SLURM_JOB_RAMDISK`.
+ * The filesystem is created as a `tmpfs` mount, owned by the job user/group.
+ *
+ * Returns failure if any steps error (which terminates the job).
+ *
+ * @param sp the spank instance
+ * @param ac argument count passed in `plugstack.conf` (0 for this plugin)
+ * @param av argument values passed in `plugstack.conf` (none)
+ * @return int
+ */
 int slurm_spank_init_post_opt(spank_t sp, int ac, char **av) {
   if (spank_context() != S_CTX_REMOTE) {
     // ensure we only perform mounts on the remote - i.e., on the compute node
@@ -164,7 +192,17 @@ int slurm_spank_init_post_opt(spank_t sp, int ac, char **av) {
   return ESPANK_SUCCESS;
 }
 
-// TODO: doxygen, mention hook for SPANK
+/**
+ * @brief SPANK exit hook which unmounts and deletes the RAM disk
+ * Tears down the RAM disk within the remote context (slurmstepd), if present.
+ *
+ * Returns failure if any steps error (which terminates the job).
+ *
+ * @param sp the spank instance
+ * @param ac argument count passed in `plugstack.conf` (0 for this plugin)
+ * @param av argument values passed in `plugstack.conf` (none)
+ * @return int
+ */
 int slurm_spank_exit(spank_t sp, int ac, char **av) {
   if (spank_context() != S_CTX_REMOTE) {
     // ensure we only perform mounts on the remote - i.e., on the compute node
@@ -211,7 +249,17 @@ int slurm_spank_exit(spank_t sp, int ac, char **av) {
   return ESPANK_SUCCESS;
 }
 
-// TODO: doxygen
+/**
+ * @brief Parses ramdisk size in megabytes into global variable `ramdisk_size`
+ * Callback to handle string parsing/unit conversion for the `--ramdisk` flag.
+ *
+ * If passed invalid options, returns failure with relevant error message.
+ *
+ * @param val the initial value (unused for this plugin)
+ * @param optarg the `--ramdisk` flag value string
+ * @param remote flag indicating remote context
+ * @return int
+ */
 static int parse_ramdisk_size(int val, const char *optarg, int remote) {
   char ramdisk_unit;
   int n_args = sscanf(optarg, "%" PRIu64 "%c", &ramdisk_size, &ramdisk_unit);
@@ -242,7 +290,18 @@ static int parse_ramdisk_size(int val, const char *optarg, int remote) {
   return ESPANK_SUCCESS;
 }
 
-// TODO: doxygen
+/**
+ * @brief Generate our RAM disk path
+ * Creates a path specific to the job and step (including magic step IDs),
+ * stored into the `directory` parameter.
+ *
+ * Returns failure if we fail to get the job or step ID, or get an invalid
+ * value.
+ *
+ * @param sp the spank instance
+ * @param directory the char array we write our directory path into
+ * @return int
+ */
 static int get_directory(spank_t sp, char directory[]) {
   // get job ID and job step ID
   uint32_t job_id;
